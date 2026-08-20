@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"task-manager/internal/apperror"
 	"task-manager/internal/model"      // model 包定义 Task 数据结构。
 	"task-manager/internal/repository" // repository 包负责数据库操作。
 )
@@ -71,7 +72,7 @@ func (s *TaskService) GetTaskByID(ctx context.Context, taskId int64) (model.Task
 	task, err := s.repository.GetByID(ctx, taskId)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return model.Task{}, ErrTaskNotFound
+			return model.Task{}, apperror.ErrNotFound
 		}
 		return model.Task{}, err
 	}
@@ -93,10 +94,10 @@ func (s *TaskService) UpdateTask(
 	updatedTask, err := s.repository.Update(ctx, task)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return model.Task{}, ErrTaskNotFound
+			return model.Task{}, apperror.ErrNotFound
 		}
 
-		return model.Task{}, ErrUpdateTaskFailed
+		return model.Task{}, apperror.ErrInvalid
 	}
 
 	return updatedTask, nil

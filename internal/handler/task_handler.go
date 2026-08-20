@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http" // net/http 提供 StatusOK、StatusBadRequest 等标准状态码常量。
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin" // Gin 提供路由上下文和 JSON 响应方法。
 
@@ -71,6 +72,14 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		return
 	}
 
+	//去除参数中的空格
+	req.Title = strings.TrimSpace(req.Title)
+	if req.Title == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request",
+		})
+		return
+	}
 	// 调用业务层创建任务，并接收新任务和可能的业务错误。
 	task, err := h.service.CreateTask(
 		// 将当前请求的上下文传下去。
