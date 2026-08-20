@@ -101,3 +101,14 @@ func (s *TaskService) UpdateTask(
 
 	return updatedTask, nil
 }
+
+func (s *TaskService) DeleteByList(ctx context.Context, ids []int64) error {
+
+	err := s.repository.DeleteByList(ctx, ids)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}

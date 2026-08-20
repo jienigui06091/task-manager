@@ -149,8 +149,8 @@ func (h *TaskHandler) GetTaskByID(c *gin.Context) {
 		})
 		return
 	}
-	task, err := h.service.GetTaskByID(c.Request.Context(),taskID)
-	if err != nil{
+	task, err := h.service.GetTaskByID(c.Request.Context(), taskID)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			// error 字段向客户端说明请求失败。
 			"error": "failed to get tasks",
@@ -160,4 +160,32 @@ func (h *TaskHandler) GetTaskByID(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": task,
 	})
+}
+func (h *TaskHandler) DeleteByList(c *gin.Context) {
+	var req struct {
+		IDs []int64 `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request",
+		})
+		return
+	}
+	if len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "任务ID列表不能为空",
+		})
+		return
+	}
+	err := h.service.DeleteByList(c.Request.Context(), req.IDs)
+	if err != nil {
+		c.JSON(500, gin.H{
+			"error": "删除失败" + err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data": "删除成功",
+	})
+
 }

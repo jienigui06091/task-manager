@@ -55,6 +55,8 @@ func main() {
 	r.POST("/api/updateTask", taskHandler.UpdateTask)
 	//获取单个任务
 	r.GET("/api/getById/:id", taskHandler.GetTaskByID)
+	//根据id集合删除任务
+	r.DELETE("/api/deleteByList", taskHandler.DeleteByList)
 	// Println 在终端输出普通日志，提示服务准备监听的端口。
 	log.Println("server running on :8089")
 

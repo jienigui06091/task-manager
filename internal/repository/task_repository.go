@@ -169,3 +169,10 @@ func (r *TaskRepository) Update(ctx context.Context, task model.Task) (model.Tas
 
 	return task, nil
 }
+
+func (r *TaskRepository) DeleteByList(ctx context.Context, ids []int64) error {
+	_, err := r.db.Exec(ctx, `
+	DELETE FROM tasks where id = ANY ($1)
+	`, ids)
+	return err
+}
