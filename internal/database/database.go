@@ -14,7 +14,7 @@ import (
 // 返回 *pgxpool.Pool 指向连接池，error 用于向调用者报告失败原因。
 func NewPostgresPool() (*pgxpool.Pool, error) {
 	// := 声明 dsn；DSN（数据源名称）描述连接数据库所需的信息。
-	dsn := "postgres://postgres:postgres@127.0.0.1:5432/taskDB"
+	dsn := "postgres://postgres:postgres@localhost:5432/taskDB"
 
 	// ParseConfig 根据 DSN 解析出可继续修改的连接池配置，并可能返回错误。
 	config, err := pgxpool.ParseConfig(dsn)

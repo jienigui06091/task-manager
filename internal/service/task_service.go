@@ -6,8 +6,15 @@ import (
 	"context" // context 用于把请求生命周期传递给仓储层。
 	"errors"  // errors 用于创建普通错误值。
 
+	"github.com/jackc/pgx/v5"
+
 	"task-manager/internal/model"      // model 包定义 Task 数据结构。
 	"task-manager/internal/repository" // repository 包负责数据库操作。
+)
+
+var (
+	ErrTaskNotFound     = errors.New("task not found")
+	ErrUpdateTaskFailed = errors.New("failed to update task")
 )
 
 // TaskService 是任务业务服务；它通过 repository 字段访问数据。
@@ -59,4 +66,28 @@ func (s *TaskService) CreateTask(
 
 	// 调用仓储层写入数据库，并直接返回其两个结果。
 	return s.repository.Create(ctx, task)
+}
+
+func (s *TaskService) UpdateTask(
+	ctx context.Context,
+	id int64,
+	title string,
+	completed bool,
+) (model.Task, error) {
+	task := model.Task{
+		ID:        id,
+		Title:     title,
+		Completed: completed,
+	}
+
+	updatedTask, err := s.repository.Update(ctx, task)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Task{}, ErrTaskNotFound
+		}
+
+		return model.Task{}, ErrUpdateTaskFailed
+	}
+
+	return updatedTask, nil
 }

@@ -130,3 +130,21 @@ func (r *TaskRepository) Create(
 
 	return task, nil
 }
+func (r *TaskRepository) Update(ctx context.Context, task model.Task) (model.Task, error) {
+	err := r.db.QueryRow(ctx, `
+		UPDATE tasks
+		SET title = $2, completed = $3, updated_at = NOW()
+		where id = $1
+		RETURNING id, title, completed, created_at, updated_at`, task.ID, task.Title, task.Completed).Scan(
+		&task.ID,
+		&task.Title,
+		&task.Completed,
+		&task.CreatedAt,
+		&task.UpdatedAt,
+	)
+	if err != nil {
+		return model.Task{}, err
+	}
+
+	return task, nil
+}

@@ -3,6 +3,7 @@ package handler
 
 // import (...) 导入 HTTP 状态码、Gin 框架和业务层。
 import (
+	"errors"
 	"net/http" // net/http 提供 StatusOK、StatusBadRequest 等标准状态码常量。
 
 	"github.com/gin-gonic/gin" // Gin 提供路由上下文和 JSON 响应方法。
@@ -89,6 +90,51 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 
 	// 创建成功后，以 HTTP 201 Created 状态返回新任务的完整 JSON 数据。
 	c.JSON(http.StatusCreated, gin.H{
+		"data": task,
+	})
+}
+
+type UpdateTaskRequest struct {
+	ID        int64  `json:"id"`
+	Title     string `json:"title"`
+	Completed bool   `json:"completed"`
+}
+
+func (h *TaskHandler) UpdateTask(c *gin.Context) {
+	var req UpdateTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request",
+		})
+		return
+	}
+	if req.ID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "任务的id不能小于等于0",
+		})
+		return
+	}
+	if req.Title == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "任务的标题不能为空",
+		})
+		return
+	}
+	task, err := h.service.UpdateTask(c.Request.Context(), req.ID, req.Title, req.Completed)
+	if err != nil {
+		if errors.Is(err, service.ErrTaskNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "任务不存在",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "任务更新失败",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
 		"data": task,
 	})
 }
