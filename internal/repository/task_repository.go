@@ -83,6 +83,27 @@ func (r *TaskRepository) GetAll(ctx context.Context) ([]model.Task, error) {
 	// 成功时返回任务列表和 nil 错误。
 	return tasks, nil
 }
+func (r *TaskRepository) GetByID(ctx context.Context, taskId int64) (model.Task, error) {
+	var task model.Task
+
+	err := r.db.QueryRow(ctx, `
+		SELECT id, title, completed, created_at, updated_at
+		FROM tasks
+		WHERE id = $1
+	`, taskId).Scan(
+		&task.ID,
+		&task.Title,
+		&task.Completed,
+		&task.CreatedAt,
+		&task.UpdatedAt,
+	)
+
+	if err != nil {
+		return model.Task{}, err
+	}
+
+	return task, nil
+}
 
 // Create 将一个任务写入数据库，并返回数据库生成 ID 和时间后的完整任务。
 func (r *TaskRepository) Create(

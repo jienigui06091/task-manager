@@ -53,7 +53,8 @@ func main() {
 	r.POST("/api/tasks", taskHandler.CreateTask)
 	// 注册更新任务的 POST 接口；taskHandler.UpdateTask 是处理函数。
 	r.POST("/api/updateTask", taskHandler.UpdateTask)
-
+	//获取单个任务
+	r.GET("/api/getById/:id", taskHandler.GetTaskByID)
 	// Println 在终端输出普通日志，提示服务准备监听的端口。
 	log.Println("server running on :8089")
 

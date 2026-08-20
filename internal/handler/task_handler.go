@@ -5,6 +5,7 @@ package handler
 import (
 	"errors"
 	"net/http" // net/http 提供 StatusOK、StatusBadRequest 等标准状态码常量。
+	"strconv"
 
 	"github.com/gin-gonic/gin" // Gin 提供路由上下文和 JSON 响应方法。
 
@@ -131,6 +132,28 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "任务更新失败",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data": task,
+	})
+}
+
+func (h *TaskHandler) GetTaskByID(c *gin.Context) {
+	id := c.Param("id")
+	taskID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "无效的任务ID",
+		})
+		return
+	}
+	task, err := h.service.GetTaskByID(c.Request.Context(),taskID)
+	if err != nil{
+		c.JSON(http.StatusInternalServerError, gin.H{
+			// error 字段向客户端说明请求失败。
+			"error": "failed to get tasks",
 		})
 		return
 	}

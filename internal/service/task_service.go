@@ -67,6 +67,16 @@ func (s *TaskService) CreateTask(
 	// 调用仓储层写入数据库，并直接返回其两个结果。
 	return s.repository.Create(ctx, task)
 }
+func (s *TaskService) GetTaskByID(ctx context.Context, taskId int64) (model.Task, error) {
+	task, err := s.repository.GetByID(ctx, taskId)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Task{}, ErrTaskNotFound
+		}
+		return model.Task{}, err
+	}
+	return task, nil
+}
 
 func (s *TaskService) UpdateTask(
 	ctx context.Context,
