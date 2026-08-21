@@ -71,3 +71,32 @@ func (h *AdminUserHandler) Register(c *gin.Context) {
 		"data": reqAdminuser,
 	})
 }
+
+type LoginReq struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func (h *AdminUserHandler) Login(c *gin.Context) {
+	//获取用户名和密码
+	var req LoginReq
+	err := c.ShouldBind(&req)
+	if err != nil {
+		c.JSON(400, gin.H{
+			"error": "请检查入参",
+		})
+		return
+	}
+	token, err := h.service.Login(c.Request.Context(), req.Username, req.Password)
+	if err != nil {
+		c.JSON(500, gin.H{
+			"error": "用户名或密码错误",
+		})
+		return
+	}
+	c.JSON(200, gin.H{
+		"data": gin.H{
+			"token": token,
+		},
+	})
+}

@@ -61,6 +61,7 @@ func main() {
 	//根据id集合删除任务
 	r.DELETE("/api/deleteByList", taskHandler.DeleteByList)
 	r.POST("/api/auth/register",userHandler.Register)
+	r.POST("/api/auth/login",userHandler.Login)
 	// Println 在终端输出普通日志，提示服务准备监听的端口。
 	log.Println("server running on :8089")
 

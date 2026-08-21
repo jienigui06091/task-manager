@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"golang.org/x/crypto/bcrypt"
+	"task-manager/internal/auth"
 	"task-manager/internal/repository"
 	"time"
 )
@@ -38,5 +40,25 @@ func (s *AdminUserService) Register(ctx context.Context, username string, posswo
 	reqAdminuser.CreatedAt = adminuser.CreatedAt
 	reqAdminuser.UpdatedAt = adminuser.UpdatedAt
 	return reqAdminuser, nil
+
+}
+
+func (s *AdminUserService) Login(ctx context.Context, username string, password string) (string, error) {
+	// 查询用户是否存在
+	user, err := s.repository.GetByUsername(ctx, username)
+	if err != nil {
+		return "", err
+	}
+	//解析密码
+	err1 := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+	if err1 != nil {
+		return "", err1
+	}
+	//生成jwt令牌
+	jwt, jwtErr := auth.GenerateJwtToken(username, user.ID)
+	if jwtErr != nil {
+		return "", jwtErr
+	}
+	return jwt, nil
 
 }
