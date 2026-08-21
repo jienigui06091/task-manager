@@ -35,6 +35,10 @@ func main() {
 	// 创建 HTTP 处理器对象，并把业务层作为依赖传入。
 	taskHandler := handler.NewTaskHandler(taskService)
 
+	userRepository := repository.NewAdminUseRepository(db)
+	userService:=service.NewAdminUserService(userRepository)
+	userHandler:=handler.NewAdminUserHandler(userService)
+
 	// gin.Default 创建路由引擎，同时启用默认日志与异常恢复中间件。
 	r := gin.Default()
 
@@ -46,7 +50,6 @@ func main() {
 			"message": "Task Manager API",
 		})
 	})
-
 	// 注册查询全部任务的 GET 接口；taskHandler.GetTasks 是处理函数。
 	r.GET("/api/tasks", taskHandler.GetTasks)
 	// 注册创建任务的 POST 接口；taskHandler.CreateTask 是处理函数。
@@ -57,6 +60,7 @@ func main() {
 	r.GET("/api/getById/:id", taskHandler.GetTaskByID)
 	//根据id集合删除任务
 	r.DELETE("/api/deleteByList", taskHandler.DeleteByList)
+	r.POST("/api/auth/register",userHandler.Register)
 	// Println 在终端输出普通日志，提示服务准备监听的端口。
 	log.Println("server running on :8089")
 

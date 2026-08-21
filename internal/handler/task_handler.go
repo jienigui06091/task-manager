@@ -224,3 +224,4 @@ func (h *TaskHandler) DeleteByList(c *gin.Context) {
 	})
 
 }
+
