@@ -27,7 +27,14 @@ func NewTaskRepository(db *pgxpool.Pool) *TaskRepository {
 
 // GetAll 查询所有任务；ctx 是请求上下文，返回任务切片或错误。
 // (r *TaskRepository) 是方法接收者，表示通过 r 操作某个仓储实例。
-func (r *TaskRepository) GetAll(ctx context.Context) ([]model.Task, error) {
+func (r *TaskRepository) GetAll(ctx context.Context, page int, pageSize int) ([]model.Task, int64, error) {
+	var total int64
+	if err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM tasks`).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * pageSize
+
 	// Query 执行可返回多行的 SQL；反引号定义原始字符串，适合书写多行 SQL。
 	rows, err := r.db.Query(ctx, `
 		-- SELECT 指定要读取的列。
@@ -36,11 +43,12 @@ func (r *TaskRepository) GetAll(ctx context.Context) ([]model.Task, error) {
 		FROM tasks
 		-- ORDER BY id DESC 按 id 降序排列，通常让较新的任务在前。
 		ORDER BY id DESC
-	`)
+		LIMIT $1 OFFSET $2
+	`, pageSize, offset)
 	// 查询失败时没有结果可处理，立刻返回错误。
 	if err != nil {
 		// nil 表示没有任务切片，err 交给调用者处理。
-		return nil, err
+		return nil, 0, err
 	}
 	// rows 用完后必须关闭；defer 保证函数结束时一定执行关闭。
 	defer rows.Close()
@@ -68,7 +76,7 @@ func (r *TaskRepository) GetAll(ctx context.Context) ([]model.Task, error) {
 		)
 		// 当前行的数据不能转换为 Go 类型时，返回错误。
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		// append 把当前任务追加到切片，并将可能扩容后的新切片赋回 tasks。
@@ -77,11 +85,11 @@ func (r *TaskRepository) GetAll(ctx context.Context) ([]model.Task, error) {
 
 	// rows.Err 检查遍历过程中出现的延迟错误，例如数据库连接中断。
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// 成功时返回任务列表和 nil 错误。
-	return tasks, nil
+	return tasks, total, nil
 }
 func (r *TaskRepository) GetByID(ctx context.Context, taskId int64) (model.Task, error) {
 	var task model.Task

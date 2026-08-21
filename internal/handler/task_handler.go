@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin" // Gin 提供路由上下文和 JSON 响应方法。
 
+	"task-manager/internal/model"
 	"task-manager/internal/service" // service 包封装创建、查询任务的业务规则。
 )
 
@@ -30,8 +31,31 @@ func NewTaskHandler(service *service.TaskService) *TaskHandler {
 
 // GetTasks 处理 GET /api/tasks 请求，并返回所有任务的 JSON 数据。
 func (h *TaskHandler) GetTasks(c *gin.Context) {
+	page := c.Query("page")
+	pageSize := c.Query("pageSize")
+	if page == "" || pageSize == "" {
+		c.JSON(400, gin.H{
+			"error": "请检查分页参数准确性",
+		})
+		return
+	}
+	iPage, err1 := strconv.Atoi(page)
+	iPageSize, err2 := strconv.Atoi(pageSize)
+	if err1 != nil || err2 != nil {
+		c.JSON(400, gin.H{
+			"error": "请检查分页参数准确性",
+		})
+		return
+	}
+	if iPage < 1 || iPageSize < 1 || iPageSize > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "请检查分页参数准确性",
+		})
+		return
+	}
+
 	// c.Request.Context() 取得当前 HTTP 请求上下文，并传给业务层。
-	tasks, err := h.service.GetAllTasks(c.Request.Context())
+	tasks, total, err := h.service.GetAllTasks(c.Request.Context(), iPage, iPageSize)
 	// 数据库查询或业务处理失败时，进入错误响应分支。
 	if err != nil {
 		// 以 HTTP 500 状态返回 JSON；gin.H 是 JSON 对象的简写类型。
@@ -44,9 +68,11 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 	}
 
 	// 查询成功时，以 HTTP 200 状态返回包含任务列表的 JSON 对象。
-	c.JSON(http.StatusOK, gin.H{
-		// data 字段的值是从业务层得到的 tasks 切片。
-		"data": tasks,
+	c.JSON(http.StatusOK, model.TaskPage{
+		Data:     tasks,
+		Page:     iPage,
+		PageSize: iPageSize,
+		Total:    total,
 	})
 }
 
