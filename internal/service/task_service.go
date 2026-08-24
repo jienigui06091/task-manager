@@ -43,13 +43,14 @@ func (s *TaskService) GetAllTasks(
 ) ([]model.Task, int64, error) {
 	// s.repository 访问接收者字段，再调用其 GetAll 方法。
 
-	return s.repository.GetAll(ctx,userId, page, pageSize)
+	return s.repository.GetAll(ctx, userId, page, pageSize)
 }
 
 // CreateTask 根据标题创建任务，并在写入数据库前验证输入。
 func (s *TaskService) CreateTask(
 	// ctx 会传给后续数据库操作。
 	ctx context.Context,
+	userId int64,
 	// title 是客户端传来的任务标题。
 	title string,
 	// 返回创建成功的任务或错误。
@@ -64,7 +65,8 @@ func (s *TaskService) CreateTask(
 	// 使用结构体字面量创建任务；未列出的字段自动使用对应类型的零值。
 	task := model.Task{
 		// 设置任务标题为函数参数 title。
-		Title: title,
+		UserId: userId,
+		Title:  title,
 		// 新任务默认尚未完成。
 		Completed: false,
 	}
@@ -72,8 +74,8 @@ func (s *TaskService) CreateTask(
 	// 调用仓储层写入数据库，并直接返回其两个结果。
 	return s.repository.Create(ctx, task)
 }
-func (s *TaskService) GetTaskByID(ctx context.Context, taskId int64) (model.Task, error) {
-	task, err := s.repository.GetByID(ctx, taskId)
+func (s *TaskService) GetTaskByID(ctx context.Context, userId int64, taskId int64) (model.Task, error) {
+	task, err := s.repository.GetByID(ctx, userId, taskId)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return model.Task{}, apperror.ErrNotFound
@@ -86,11 +88,13 @@ func (s *TaskService) GetTaskByID(ctx context.Context, taskId int64) (model.Task
 func (s *TaskService) UpdateTask(
 	ctx context.Context,
 	id int64,
+	userId int64,
 	title string,
 	completed bool,
 ) (model.Task, error) {
 	task := model.Task{
 		ID:        id,
+		UserId:    userId,
 		Title:     title,
 		Completed: completed,
 	}
@@ -107,9 +111,9 @@ func (s *TaskService) UpdateTask(
 	return updatedTask, nil
 }
 
-func (s *TaskService) DeleteByList(ctx context.Context, ids []int64) error {
+func (s *TaskService) DeleteByList(ctx context.Context, ids []int64, UserId int64) error {
 
-	err := s.repository.DeleteByList(ctx, ids)
+	err := s.repository.DeleteByList(ctx, ids, UserId)
 	if err != nil {
 		return err
 	}
@@ -117,5 +121,3 @@ func (s *TaskService) DeleteByList(ctx context.Context, ids []int64) error {
 	return nil
 
 }
-
-

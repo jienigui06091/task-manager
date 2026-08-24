@@ -93,15 +93,16 @@ func (r *TaskRepository) GetAll(ctx context.Context, userId int64, page int, pag
 	// 成功时返回任务列表和 nil 错误。
 	return tasks, total, nil
 }
-func (r *TaskRepository) GetByID(ctx context.Context, taskId int64) (model.Task, error) {
+func (r *TaskRepository) GetByID(ctx context.Context, userId int64, taskId int64) (model.Task, error) {
 	var task model.Task
 
 	err := r.db.QueryRow(ctx, `
 		SELECT id, title, completed, created_at, updated_at
 		FROM tasks
-		WHERE id = $1
-	`, taskId).Scan(
+		WHERE id = $1 and user_id = $2
+	`, taskId, userId).Scan(
 		&task.ID,
+		&task.UserId,
 		&task.Title,
 		&task.Completed,
 		&task.CreatedAt,
@@ -127,13 +128,14 @@ func (r *TaskRepository) Create(
 	// QueryRow 执行期望只返回一行的 SQL；:= 在函数内创建 err 变量。
 	err := r.db.QueryRow(ctx, `
 		-- INSERT INTO 指定要向 tasks 表新增记录。
-		INSERT INTO tasks (title, completed)
+		INSERT INTO tasks (user_id,title, completed)
 		-- $1、$2 是参数占位符，避免直接拼接用户输入造成 SQL 注入。
-		VALUES ($1, $2)
+		VALUES ($1, $2,$3)
 		-- RETURNING 要求 PostgreSQL 返回刚插入记录的完整字段。
 		RETURNING id, title, completed, created_at, updated_at
 	`,
 		// 第一个 SQL 参数替换 $1，即任务标题。
+		task.UserId,
 		task.Title,
 		// 第二个 SQL 参数替换 $2，即任务完成状态。
 		task.Completed,
@@ -165,9 +167,10 @@ func (r *TaskRepository) Update(ctx context.Context, task model.Task) (model.Tas
 	err := r.db.QueryRow(ctx, `
 		UPDATE tasks
 		SET title = $2, completed = $3, updated_at = NOW()
-		where id = $1
-		RETURNING id, title, completed, created_at, updated_at`, task.ID, task.Title, task.Completed).Scan(
+		where id = $1 and user_id = $4
+		RETURNING id, user_id,title, completed, created_at, updated_at`, task.ID, task.Title, task.Completed, task.UserId).Scan(
 		&task.ID,
+		&task.UserId,
 		&task.Title,
 		&task.Completed,
 		&task.CreatedAt,
@@ -180,9 +183,9 @@ func (r *TaskRepository) Update(ctx context.Context, task model.Task) (model.Tas
 	return task, nil
 }
 
-func (r *TaskRepository) DeleteByList(ctx context.Context, ids []int64) error {
+func (r *TaskRepository) DeleteByList(ctx context.Context, ids []int64, userId int64) error {
 	_, err := r.db.Exec(ctx, `
-	DELETE FROM tasks where id = ANY ($1)
-	`, ids)
+	DELETE FROM tasks where id = ANY ($1) and user_id = $2
+	`, ids, userId)
 	return err
 }

@@ -63,7 +63,7 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 	}
 
 	// c.Request.Context() 取得当前 HTTP 请求上下文，并传给业务层。
-	tasks, total, err := h.service.GetAllTasks(c.Request.Context(), userId,iPage, iPageSize)
+	tasks, total, err := h.service.GetAllTasks(c.Request.Context(), userId, iPage, iPageSize)
 	// 数据库查询或业务处理失败时，进入错误响应分支。
 	if err != nil {
 		// 以 HTTP 500 状态返回 JSON；gin.H 是 JSON 对象的简写类型。
@@ -115,9 +115,17 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		return
 	}
 	// 调用业务层创建任务，并接收新任务和可能的业务错误。
+	user_id, ok := middleware.GetUserId(c)
+	if !ok {
+		c.JSON(401, gin.H{
+			"error": "token过期或不存在",
+		})
+		return
+	}
 	task, err := h.service.CreateTask(
 		// 将当前请求的上下文传下去。
 		c.Request.Context(),
+		user_id,
 		// 传入从 JSON 请求体解析出的标题。
 		req.Title,
 	)
@@ -164,7 +172,14 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 		})
 		return
 	}
-	task, err := h.service.UpdateTask(c.Request.Context(), req.ID, req.Title, req.Completed)
+	user_id, ok := middleware.GetUserId(c)
+	if !ok {
+		c.JSON(401, gin.H{
+			"error": "token过期或不存在",
+		})
+		return
+	}
+	task, err := h.service.UpdateTask(c.Request.Context(), req.ID, user_id, req.Title, req.Completed)
 	if err != nil {
 		if errors.Is(err, service.ErrTaskNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -192,7 +207,14 @@ func (h *TaskHandler) GetTaskByID(c *gin.Context) {
 		})
 		return
 	}
-	task, err := h.service.GetTaskByID(c.Request.Context(), taskID)
+	user_id, ok := middleware.GetUserId(c)
+	if !ok {
+		c.JSON(401, gin.H{
+			"error": "token过期或不存在",
+		})
+		return
+	}
+	task, err := h.service.GetTaskByID(c.Request.Context(), user_id, taskID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			// error 字段向客户端说明请求失败。
@@ -220,7 +242,14 @@ func (h *TaskHandler) DeleteByList(c *gin.Context) {
 		})
 		return
 	}
-	err := h.service.DeleteByList(c.Request.Context(), req.IDs)
+	user_id, ok := middleware.GetUserId(c)
+	if !ok {
+		c.JSON(401, gin.H{
+			"error": "token过期或不存在",
+		})
+		return
+	}
+	err := h.service.DeleteByList(c.Request.Context(), req.IDs, user_id)
 	if err != nil {
 		c.JSON(500, gin.H{
 			"error": "删除失败" + err.Error(),
