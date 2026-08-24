@@ -47,7 +47,7 @@ func (r *AdminUserRepository) Register(cxt context.Context, username string, pas
 
 func (r *AdminUserRepository) GetByUsername(ctx context.Context, username string) (model.AdminUser, error) {
 	var user model.AdminUser
-	err:=r.db.QueryRow(ctx, `
+	err := r.db.QueryRow(ctx, `
 	select * from admin_user
 	where username = $1
 	`, username).Scan(
@@ -57,8 +57,47 @@ func (r *AdminUserRepository) GetByUsername(ctx context.Context, username string
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
-	if err!=nil {
-		return model.AdminUser{},err
+	if err != nil {
+		return model.AdminUser{}, err
 	}
-	return user,nil
+	return user, nil
+}
+
+func (r *AdminUserRepository) Page(ctx context.Context, page int, pageSize int) ([]model.AdminUser, int64, error) {
+	var total int64
+	if err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM admin_user`).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.db.Query(ctx, `
+		SELECT id, username, password_hash, created_at, updated_at
+		FROM admin_user
+		ORDER BY id DESC
+		LIMIT $1 OFFSET $2
+	`, pageSize, (page-1)*pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	users := make([]model.AdminUser, 0)
+	for rows.Next() {
+		var user model.AdminUser
+		if err := rows.Scan(
+			&user.ID,
+			&user.Username,
+			&user.PasswordHash,
+			&user.CreatedAt,
+			&user.UpdatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		users = append(users, user)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return users, total, nil
 }

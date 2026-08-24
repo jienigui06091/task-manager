@@ -62,3 +62,22 @@ func (s *AdminUserService) Login(ctx context.Context, username string, password 
 	return jwt, nil
 
 }
+
+func (s *AdminUserService) Page(ctx context.Context, page int, pageSize int) ([]AdminUserReq, int64, error) {
+	users, total, err := s.repository.Page(ctx, page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	result := make([]AdminUserReq, 0, len(users))
+	for _, user := range users {
+		result = append(result, AdminUserReq{
+			ID:        user.ID,
+			Username:  user.Username,
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: user.UpdatedAt,
+		})
+	}
+
+	return result, total, nil
+}

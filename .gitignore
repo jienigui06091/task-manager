@@ -1,3 +1,4 @@
 server.exe
 .vscode/launch.json
 frontend/
+.env

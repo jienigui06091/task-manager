@@ -67,6 +67,9 @@ func main() {
 		taskGroup.DELETE("/deleteByList", taskHandler.DeleteByList)
 		taskGroup.GET("/duplicate", taskHandler.Duplicate)
 	}
+	userGroup := r.Group("/api/user")
+	userGroup.Use(middleware.AuthMiddleware())
+	userGroup.GET("/page", userHandler.Page)
 
 	// GET 注册 HTTP GET 路由：客户端访问 / 时执行后面的匿名函数。
 	r.GET("/", func(c *gin.Context) {
