@@ -27,9 +27,9 @@ func NewTaskRepository(db *pgxpool.Pool) *TaskRepository {
 
 // GetAll 查询所有任务；ctx 是请求上下文，返回任务切片或错误。
 // (r *TaskRepository) 是方法接收者，表示通过 r 操作某个仓储实例。
-func (r *TaskRepository) GetAll(ctx context.Context, page int, pageSize int) ([]model.Task, int64, error) {
+func (r *TaskRepository) GetAll(ctx context.Context, userId int64, page int, pageSize int) ([]model.Task, int64, error) {
 	var total int64
-	if err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM tasks`).Scan(&total); err != nil {
+	if err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM tasks where user_id = $1`, userId).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -38,13 +38,14 @@ func (r *TaskRepository) GetAll(ctx context.Context, page int, pageSize int) ([]
 	// Query 执行可返回多行的 SQL；反引号定义原始字符串，适合书写多行 SQL。
 	rows, err := r.db.Query(ctx, `
 		-- SELECT 指定要读取的列。
-		SELECT id, title, completed, created_at, updated_at
+		SELECT id, user_id,title, completed, created_at, updated_at
 		-- FROM 指定读取 tasks 表。
 		FROM tasks
 		-- ORDER BY id DESC 按 id 降序排列，通常让较新的任务在前。
+		WHERE user_id = $1
 		ORDER BY id DESC
-		LIMIT $1 OFFSET $2
-	`, pageSize, offset)
+		LIMIT $2 OFFSET $3
+	`, userId, pageSize, offset)
 	// 查询失败时没有结果可处理，立刻返回错误。
 	if err != nil {
 		// nil 表示没有任务切片，err 交给调用者处理。
@@ -65,6 +66,7 @@ func (r *TaskRepository) GetAll(ctx context.Context, page int, pageSize int) ([]
 		err := rows.Scan(
 			// &task.ID 取字段地址，使 Scan 可以修改 ID。
 			&task.ID,
+			&task.UserId,
 			// 将第二列 title 写入任务标题。
 			&task.Title,
 			// 将第三列 completed 写入完成状态。

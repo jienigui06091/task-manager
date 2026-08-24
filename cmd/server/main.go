@@ -8,8 +8,9 @@ import (
 
 	"github.com/gin-gonic/gin" // Gin 是用于构建 HTTP API 的第三方框架。
 
-	"task-manager/internal/database"   // database 包负责建立数据库连接池。
-	"task-manager/internal/handler"    // handler 包负责处理 HTTP 请求。
+	"task-manager/internal/database" // database 包负责建立数据库连接池。
+	"task-manager/internal/handler"  // handler 包负责处理 HTTP 请求。
+	"task-manager/internal/middleware"
 	"task-manager/internal/repository" // repository 包负责直接读写数据库。
 	"task-manager/internal/service"    // service 包负责业务规则。
 )
@@ -36,11 +37,32 @@ func main() {
 	taskHandler := handler.NewTaskHandler(taskService)
 
 	userRepository := repository.NewAdminUseRepository(db)
-	userService:=service.NewAdminUserService(userRepository)
-	userHandler:=handler.NewAdminUserHandler(userService)
+	userService := service.NewAdminUserService(userRepository)
+	userHandler := handler.NewAdminUserHandler(userService)
 
 	// gin.Default 创建路由引擎，同时启用默认日志与异常恢复中间件。
 	r := gin.Default()
+	//不需要JWT
+	authGroup := r.Group("/api/auth")
+	{
+		authGroup.POST("/register", userHandler.Register)
+		authGroup.POST("/login", userHandler.Login)
+	}
+	//需要JWT
+	taskGroup := r.Group("/api/task")
+	taskGroup.Use(middleware.AuthMiddleware())
+	{
+		// 注册查询全部任务的 GET 接口；taskHandler.GetTasks 是处理函数。
+		taskGroup.GET("/page", taskHandler.GetTasks)
+		// 注册创建任务的 POST 接口；taskHandler.CreateTask 是处理函数。
+		taskGroup.POST("/create", taskHandler.CreateTask)
+		// 注册更新任务的 POST 接口；taskHandler.UpdateTask 是处理函数。
+		taskGroup.POST("/update", taskHandler.UpdateTask)
+		//获取单个任务
+		taskGroup.GET("/getById", taskHandler.GetTaskByID)
+		//根据id集合删除任务
+		taskGroup.DELETE("/deleteByList", taskHandler.DeleteByList)
+	}
 
 	// GET 注册 HTTP GET 路由：客户端访问 / 时执行后面的匿名函数。
 	r.GET("/", func(c *gin.Context) {
@@ -50,18 +72,7 @@ func main() {
 			"message": "Task Manager API",
 		})
 	})
-	// 注册查询全部任务的 GET 接口；taskHandler.GetTasks 是处理函数。
-	r.GET("/api/tasks", taskHandler.GetTasks)
-	// 注册创建任务的 POST 接口；taskHandler.CreateTask 是处理函数。
-	r.POST("/api/tasks", taskHandler.CreateTask)
-	// 注册更新任务的 POST 接口；taskHandler.UpdateTask 是处理函数。
-	r.POST("/api/updateTask", taskHandler.UpdateTask)
-	//获取单个任务
-	r.GET("/api/getById/:id", taskHandler.GetTaskByID)
-	//根据id集合删除任务
-	r.DELETE("/api/deleteByList", taskHandler.DeleteByList)
-	r.POST("/api/auth/register",userHandler.Register)
-	r.POST("/api/auth/login",userHandler.Login)
+
 	// Println 在终端输出普通日志，提示服务准备监听的端口。
 	log.Println("server running on :8089")
 

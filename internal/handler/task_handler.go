@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin" // Gin 提供路由上下文和 JSON 响应方法。
 
+	"task-manager/internal/middleware"
 	"task-manager/internal/model"
 	"task-manager/internal/service" // service 包封装创建、查询任务的业务规则。
 )
@@ -33,6 +34,13 @@ func NewTaskHandler(service *service.TaskService) *TaskHandler {
 func (h *TaskHandler) GetTasks(c *gin.Context) {
 	page := c.Query("page")
 	pageSize := c.Query("pageSize")
+	userId, ok := middleware.GetUserId(c)
+	if !ok {
+		c.JSON(401, gin.H{
+			"error": "token过期或不存在",
+		})
+		return
+	}
 	if page == "" || pageSize == "" {
 		c.JSON(400, gin.H{
 			"error": "请检查分页参数准确性",
@@ -55,7 +63,7 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 	}
 
 	// c.Request.Context() 取得当前 HTTP 请求上下文，并传给业务层。
-	tasks, total, err := h.service.GetAllTasks(c.Request.Context(), iPage, iPageSize)
+	tasks, total, err := h.service.GetAllTasks(c.Request.Context(), userId,iPage, iPageSize)
 	// 数据库查询或业务处理失败时，进入错误响应分支。
 	if err != nil {
 		// 以 HTTP 500 状态返回 JSON；gin.H 是 JSON 对象的简写类型。
@@ -176,7 +184,7 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 }
 
 func (h *TaskHandler) GetTaskByID(c *gin.Context) {
-	id := c.Param("id")
+	id := c.Query("id")
 	taskID, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -224,4 +232,3 @@ func (h *TaskHandler) DeleteByList(c *gin.Context) {
 	})
 
 }
-

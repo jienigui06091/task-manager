@@ -8,6 +8,7 @@ import "time"
 type Task struct {
 	// ID 是任务的数据库主键；int64 是 64 位有符号整数。
 	ID int64 `json:"id"`
+	UserId int64 `json:"user_id"`
 	// Title 是任务标题；string 是文本类型。
 	// 反引号中的 json 标签规定 JSON 输出时的字段名为 title。
 	Title string `json:"title"`

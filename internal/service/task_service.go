@@ -36,12 +36,14 @@ func NewTaskService(repository *repository.TaskRepository) *TaskService {
 func (s *TaskService) GetAllTasks(
 	// ctx 会继续传给数据库操作，使请求取消能及时生效。
 	ctx context.Context,
+	userId int64,
 	page int,
 	pageSize int,
 	// 返回任务切片和错误。
 ) ([]model.Task, int64, error) {
 	// s.repository 访问接收者字段，再调用其 GetAll 方法。
-	return s.repository.GetAll(ctx, page, pageSize)
+
+	return s.repository.GetAll(ctx,userId, page, pageSize)
 }
 
 // CreateTask 根据标题创建任务，并在写入数据库前验证输入。
