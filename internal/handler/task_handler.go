@@ -261,3 +261,32 @@ func (h *TaskHandler) DeleteByList(c *gin.Context) {
 	})
 
 }
+
+func (h *TaskHandler) Duplicate(c *gin.Context) {
+	newVar := c.Query("taskId")
+	taskId, newVar2 := strconv.Atoi(newVar)
+	if newVar2 != nil {
+		c.JSON(400, gin.H{
+			"errror": "请传入正确的taskId",
+		})
+		return
+	}
+	user_id, ok := middleware.GetUserId(c)
+	if !ok {
+		c.JSON(401, gin.H{
+			"error": "token过期或不存在",
+		})
+		return
+	}
+	err := h.service.Duplicate(c.Request.Context(), user_id, int64(taskId))
+	if err != nil {
+		c.JSON(500, gin.H{
+			"error": err,
+		})
+		return
+	}
+	c.JSON(200, gin.H{
+		"data": "ok",
+	})
+
+}

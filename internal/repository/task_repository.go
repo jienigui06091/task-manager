@@ -3,8 +3,7 @@ package repository
 
 // import (...) 导入访问数据库和任务模型所需的包。
 import (
-	"context" // context 把请求的取消信号等信息传递给数据库操作。
-
+	"context"                         // context 把请求的取消信号等信息传递给数据库操作。
 	"github.com/jackc/pgx/v5/pgxpool" // pgxpool.Pool 是 PostgreSQL 连接池类型。
 
 	"task-manager/internal/model" // model.Task 是项目定义的任务数据结构。
@@ -43,7 +42,7 @@ func (r *TaskRepository) GetAll(ctx context.Context, userId int64, page int, pag
 		FROM tasks
 		-- ORDER BY id DESC 按 id 降序排列，通常让较新的任务在前。
 		WHERE user_id = $1
-		ORDER BY id DESC
+		ORDER BY updated_at DESC
 		LIMIT $2 OFFSET $3
 	`, userId, pageSize, offset)
 	// 查询失败时没有结果可处理，立刻返回错误。
@@ -97,7 +96,7 @@ func (r *TaskRepository) GetByID(ctx context.Context, userId int64, taskId int64
 	var task model.Task
 
 	err := r.db.QueryRow(ctx, `
-		SELECT id, title, completed, created_at, updated_at
+		SELECT id, user_id,title, completed, created_at, updated_at
 		FROM tasks
 		WHERE id = $1 and user_id = $2
 	`, taskId, userId).Scan(
@@ -120,19 +119,20 @@ func (r *TaskRepository) GetByID(ctx context.Context, userId int64, taskId int64
 func (r *TaskRepository) Create(
 	// ctx 将取消信号和截止时间传给数据库操作。
 	ctx context.Context,
+	db DBTX,
 	// task 是调用者提供的待创建任务；查询结果会写回这个局部变量。
 	task model.Task,
 	// 该方法返回一个 Task 和一个 error。
 ) (model.Task, error) {
 
 	// QueryRow 执行期望只返回一行的 SQL；:= 在函数内创建 err 变量。
-	err := r.db.QueryRow(ctx, `
+	err := db.QueryRow(ctx, `
 		-- INSERT INTO 指定要向 tasks 表新增记录。
 		INSERT INTO tasks (user_id,title, completed)
 		-- $1、$2 是参数占位符，避免直接拼接用户输入造成 SQL 注入。
-		VALUES ($1, $2,$3)
+		VALUES ($1, $2, $3)
 		-- RETURNING 要求 PostgreSQL 返回刚插入记录的完整字段。
-		RETURNING id, title, completed, created_at, updated_at
+		RETURNING id, user_id,title, completed, created_at, updated_at
 	`,
 		// 第一个 SQL 参数替换 $1，即任务标题。
 		task.UserId,
@@ -143,6 +143,7 @@ func (r *TaskRepository) Create(
 	).Scan(
 		// 将数据库返回的 id 写入 task.ID。
 		&task.ID,
+		&task.UserId,
 		// 将数据库返回的 title 写入 task.Title。
 		&task.Title,
 		// 将数据库返回的 completed 写入 task.Completed。
@@ -188,4 +189,50 @@ func (r *TaskRepository) DeleteByList(ctx context.Context, ids []int64, userId i
 	DELETE FROM tasks where id = ANY ($1) and user_id = $2
 	`, ids, userId)
 	return err
+}
+
+func (r *TaskRepository) Duplicate(ctx context.Context, userId int64, taskId int64) error {
+	task, err := r.GetByID(ctx, userId, taskId)
+	if err != nil {
+		return err
+	}
+	taskEn := model.Task{
+		UserId:    userId,
+		Completed: task.Completed,
+		CreatedAt: task.CreatedAt,
+		UpdatedAt: task.UpdatedAt,
+	}
+	errT := r.db.QueryRow(ctx, `
+		-- INSERT INTO 指定要向 tasks 表新增记录。
+		INSERT INTO tasks (user_id,title, completed,created_at,updated_at)
+		-- $1、$2 是参数占位符，避免直接拼接用户输入造成 SQL 注入。
+		VALUES ($1, $2, $3,$4,$5)
+		-- RETURNING 要求 PostgreSQL 返回刚插入记录的完整字段。
+		RETURNING id, user_id,title, completed, created_at, updated_at
+	`,
+		// 第一个 SQL 参数替换 $1，即任务标题。
+		taskEn.UserId,
+		taskEn.Title,
+		// 第二个 SQL 参数替换 $2，即任务完成状态。
+		taskEn.Completed,
+		taskEn.CreatedAt,
+		taskEn.UpdatedAt,
+	// Scan 读取 INSERT ... RETURNING 返回的唯一一行，填充 task 的字段。
+	).Scan(
+		// 将数据库返回的 id 写入 task.ID。
+		&task.ID,
+		&task.UserId,
+		// 将数据库返回的 title 写入 task.Title。
+		&task.Title,
+		// 将数据库返回的 completed 写入 task.Completed。
+		&task.Completed,
+		// 将数据库返回的 created_at 写入 task.CreatedAt。
+		&task.CreatedAt,
+		// 将数据库返回的 updated_at 写入 task.UpdatedAt。
+		&task.UpdatedAt,
+	)
+	if errT != nil {
+		return errT
+	}
+	return nil
 }

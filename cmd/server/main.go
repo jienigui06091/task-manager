@@ -29,9 +29,12 @@ func main() {
 
 	// 创建仓储层对象，并让它持有数据库连接池。
 	taskRepository := repository.NewTaskRepository(db)
+	taskLogRepository := repository.NewTaskLogRepository()
 
 	// 创建业务层对象，并把仓储层作为依赖传入。
-	taskService := service.NewTaskService(taskRepository)
+	taskService := service.NewTaskService(db,
+		taskRepository,
+		taskLogRepository)
 
 	// 创建 HTTP 处理器对象，并把业务层作为依赖传入。
 	taskHandler := handler.NewTaskHandler(taskService)
@@ -62,6 +65,7 @@ func main() {
 		taskGroup.GET("/getById", taskHandler.GetTaskByID)
 		//根据id集合删除任务
 		taskGroup.DELETE("/deleteByList", taskHandler.DeleteByList)
+		taskGroup.GET("/duplicate", taskHandler.Duplicate)
 	}
 
 	// GET 注册 HTTP GET 路由：客户端访问 / 时执行后面的匿名函数。

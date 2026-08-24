@@ -7,7 +7,7 @@ import (
 	"errors"  // errors 用于创建普通错误值。
 
 	"github.com/jackc/pgx/v5"
-
+	"github.com/jackc/pgx/v5/pgxpool"
 	"task-manager/internal/apperror"
 	"task-manager/internal/model"      // model 包定义 Task 数据结构。
 	"task-manager/internal/repository" // repository 包负责数据库操作。
@@ -19,16 +19,35 @@ var (
 )
 
 // TaskService 是任务业务服务；它通过 repository 字段访问数据。
+//
+//	type TaskService struct {
+//		// repository 保存任务仓储的指针，使服务可调用它的方法。
+//		repository *repository.TaskRepository
+//	}
 type TaskService struct {
-	// repository 保存任务仓储的指针，使服务可调用它的方法。
-	repository *repository.TaskRepository
+	db             *pgxpool.Pool
+	taskRepository *repository.TaskRepository
+	logRepository  *repository.TaskLogRepository
 }
 
 // NewTaskService 创建业务服务，并把仓储依赖保存到结构体中。
-func NewTaskService(repository *repository.TaskRepository) *TaskService {
-	// 返回新结构体的地址；左侧 repository 是字段，右侧是函数参数。
+//
+//	func NewTaskService(repository *repository.TaskRepository) *TaskService {
+//		// 返回新结构体的地址；左侧 repository 是字段，右侧是函数参数。
+//		return &TaskService{
+//			repository: repository,
+//		}
+//	}
+func NewTaskService(
+	db *pgxpool.Pool,
+	taskRepository *repository.TaskRepository,
+	logRepository *repository.TaskLogRepository,
+) *TaskService {
+
 	return &TaskService{
-		repository: repository,
+		db:             db,
+		taskRepository: taskRepository,
+		logRepository:  logRepository,
 	}
 }
 
@@ -43,39 +62,87 @@ func (s *TaskService) GetAllTasks(
 ) ([]model.Task, int64, error) {
 	// s.repository 访问接收者字段，再调用其 GetAll 方法。
 
-	return s.repository.GetAll(ctx, userId, page, pageSize)
+	return s.taskRepository.GetAll(ctx, userId, page, pageSize)
 }
 
 // CreateTask 根据标题创建任务，并在写入数据库前验证输入。
+// func (s *TaskService) CreateTask(
+// 	// ctx 会传给后续数据库操作。
+// 	ctx context.Context,
+// 	userId int64,
+// 	// title 是客户端传来的任务标题。
+// 	title string,
+// 	// 返回创建成功的任务或错误。
+// ) (model.Task, error) {
+
+// 	// == 比较两个值是否相等；空字符串不允许作为任务标题。
+// 	if title == "" {
+// 		// errors.New 创建错误；空结构体和错误一起返回以表示创建失败。
+// 		return model.Task{}, errors.New("title is required")
+// 	}
+
+// 	// 使用结构体字面量创建任务；未列出的字段自动使用对应类型的零值。
+// 	task := model.Task{
+// 		// 设置任务标题为函数参数 title。
+// 		UserId: userId,
+// 		Title:  title,
+// 		// 新任务默认尚未完成。
+// 		Completed: false,
+// 	}
+
+//		// 调用仓储层写入数据库，并直接返回其两个结果。
+//		return s.repository.Create(ctx, task)
+//	}
 func (s *TaskService) CreateTask(
-	// ctx 会传给后续数据库操作。
 	ctx context.Context,
-	userId int64,
-	// title 是客户端传来的任务标题。
+	userID int64,
 	title string,
-	// 返回创建成功的任务或错误。
 ) (model.Task, error) {
 
-	// == 比较两个值是否相等；空字符串不允许作为任务标题。
-	if title == "" {
-		// errors.New 创建错误；空结构体和错误一起返回以表示创建失败。
-		return model.Task{}, errors.New("title is required")
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return model.Task{}, err
 	}
 
-	// 使用结构体字面量创建任务；未列出的字段自动使用对应类型的零值。
+	defer tx.Rollback(ctx)
+
 	task := model.Task{
-		// 设置任务标题为函数参数 title。
-		UserId: userId,
-		Title:  title,
-		// 新任务默认尚未完成。
+		UserId:    userID,
+		Title:     title,
 		Completed: false,
 	}
 
-	// 调用仓储层写入数据库，并直接返回其两个结果。
-	return s.repository.Create(ctx, task)
+	// ① 创建 Task
+	task, err = s.taskRepository.Create(
+		ctx,
+		tx,
+		task,
+	)
+	if err != nil {
+		return model.Task{}, err
+	}
+
+	// ② 创建操作日志
+	err = s.logRepository.Create(
+		ctx,
+		tx,
+		task.ID,
+		userID,
+		"create",
+	)
+	if err != nil {
+		return model.Task{}, err
+	}
+
+	// ③ 提交事务
+	if err := tx.Commit(ctx); err != nil {
+		return model.Task{}, err
+	}
+
+	return task, nil
 }
 func (s *TaskService) GetTaskByID(ctx context.Context, userId int64, taskId int64) (model.Task, error) {
-	task, err := s.repository.GetByID(ctx, userId, taskId)
+	task, err := s.taskRepository.GetByID(ctx, userId, taskId)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return model.Task{}, apperror.ErrNotFound
@@ -99,7 +166,7 @@ func (s *TaskService) UpdateTask(
 		Completed: completed,
 	}
 
-	updatedTask, err := s.repository.Update(ctx, task)
+	updatedTask, err := s.taskRepository.Update(ctx, task)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return model.Task{}, apperror.ErrNotFound
@@ -113,11 +180,19 @@ func (s *TaskService) UpdateTask(
 
 func (s *TaskService) DeleteByList(ctx context.Context, ids []int64, UserId int64) error {
 
-	err := s.repository.DeleteByList(ctx, ids, UserId)
+	err := s.taskRepository.DeleteByList(ctx, ids, UserId)
 	if err != nil {
 		return err
 	}
 
 	return nil
 
+}
+
+func (s *TaskService) Duplicate(ctx context.Context, userId int64, taskId int64) error {
+	err := s.taskRepository.Duplicate(ctx, userId, taskId)
+	if err != nil {
+		return err
+	}
+	return nil
 }
