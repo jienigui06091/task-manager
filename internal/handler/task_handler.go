@@ -12,6 +12,7 @@ import (
 
 	"task-manager/internal/middleware"
 	"task-manager/internal/model"
+	"task-manager/internal/response"
 	"task-manager/internal/service" // service 包封装创建、查询任务的业务规则。
 )
 
@@ -36,29 +37,22 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 	pageSize := c.Query("pageSize")
 	userId, ok := middleware.GetUserId(c)
 	if !ok {
-		c.JSON(401, gin.H{
-			"error": "token过期或不存在",
-		})
+
+		response.Error(c, http.StatusUnauthorized, 200, "token过期或不存在")
 		return
 	}
 	if page == "" || pageSize == "" {
-		c.JSON(400, gin.H{
-			"error": "请检查分页参数准确性",
-		})
+		response.Error(c, http.StatusBadRequest, 200, "请检查分页参数准确性")
 		return
 	}
 	iPage, err1 := strconv.Atoi(page)
 	iPageSize, err2 := strconv.Atoi(pageSize)
 	if err1 != nil || err2 != nil {
-		c.JSON(400, gin.H{
-			"error": "请检查分页参数准确性",
-		})
+		response.Error(c, http.StatusBadRequest, 200, "请检查分页参数准确性")
 		return
 	}
 	if iPage < 1 || iPageSize < 1 || iPageSize > 100 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "请检查分页参数准确性",
-		})
+		response.Error(c, http.StatusBadRequest, 200, "请检查分页参数准确性")
 		return
 	}
 
@@ -67,17 +61,14 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 	// 数据库查询或业务处理失败时，进入错误响应分支。
 	if err != nil {
 		// 以 HTTP 500 状态返回 JSON；gin.H 是 JSON 对象的简写类型。
-		c.JSON(http.StatusInternalServerError, gin.H{
-			// error 字段向客户端说明请求失败。
-			"error": "failed to get tasks",
-		})
+		response.Error(c, http.StatusInternalServerError, 200, "failed to get tasks")
 		// return 结束处理函数，避免继续发送成功响应。
 		return
 	}
 
 	// 查询成功时，以 HTTP 200 状态返回包含任务列表的 JSON 对象。
-	c.JSON(http.StatusOK, model.TaskPage{
-		Data:     tasks,
+	response.Success(c, model.TaskPage{
+		List:     tasks,
 		Page:     iPage,
 		PageSize: iPageSize,
 		Total:    total,
@@ -98,10 +89,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	// ShouldBindJSON 解析请求体 JSON 并写入 req；&req 传入变量地址。
 	if err := c.ShouldBindJSON(&req); err != nil {
 		// JSON 格式不正确或不能映射到结构体时，以 HTTP 400 状态返回错误。
-		c.JSON(http.StatusBadRequest, gin.H{
-			// 向客户端说明请求体无效。
-			"error": "invalid request",
-		})
+		response.Error(c, http.StatusBadRequest, 200, "invalid request")
 		// 结束函数，避免无效输入继续进入业务层。
 		return
 	}
@@ -109,17 +97,13 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	//去除参数中的空格
 	req.Title = strings.TrimSpace(req.Title)
 	if req.Title == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request",
-		})
+		response.Error(c, http.StatusBadRequest, 200, "invalid request")
 		return
 	}
 	// 调用业务层创建任务，并接收新任务和可能的业务错误。
 	user_id, ok := middleware.GetUserId(c)
 	if !ok {
-		c.JSON(401, gin.H{
-			"error": "token过期或不存在",
-		})
+		response.Error(c, http.StatusUnauthorized, 200, "token过期或不存在")
 		return
 	}
 	task, err := h.service.CreateTask(
@@ -133,17 +117,13 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	// 例如标题为空时业务层会返回错误。
 	if err != nil {
 		// 以 HTTP 400 状态返回错误文本；err.Error() 将 error 转为字符串。
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		response.Error(c, http.StatusBadRequest, 200, err.Error())
 		// 发送错误响应后立即结束函数。
 		return
 	}
 
 	// 创建成功后，以 HTTP 201 Created 状态返回新任务的完整 JSON 数据。
-	c.JSON(http.StatusCreated, gin.H{
-		"data": task,
-	})
+	response.Created(c, task)
 }
 
 type UpdateTaskRequest struct {
@@ -155,110 +135,77 @@ type UpdateTaskRequest struct {
 func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	var req UpdateTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request",
-		})
+		response.Error(c, http.StatusBadRequest, 200, "invalid request")
 		return
 	}
 	if req.ID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "任务的id不能小于等于0",
-		})
+		response.Error(c, http.StatusBadRequest, 200, "任务的id不能小于等于0")
 		return
 	}
 	if req.Title == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "任务的标题不能为空",
-		})
+		response.Error(c, http.StatusBadRequest, 200, "任务的标题不能为空")
 		return
 	}
 	user_id, ok := middleware.GetUserId(c)
 	if !ok {
-		c.JSON(401, gin.H{
-			"error": "token过期或不存在",
-		})
+		response.Error(c, http.StatusUnauthorized, 200, "token过期或不存在")
 		return
 	}
 	task, err := h.service.UpdateTask(c.Request.Context(), req.ID, user_id, req.Title, req.Completed)
 	if err != nil {
 		if errors.Is(err, service.ErrTaskNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{
-				"error": "任务不存在",
-			})
+			response.Error(c, http.StatusNotFound, 200, "任务不存在")
 			return
 		}
 
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "任务更新失败",
-		})
+		response.Error(c, http.StatusInternalServerError, 200, "任务更新失败")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"data": task,
-	})
+	response.Success(c, task)
 }
 
 func (h *TaskHandler) GetTaskByID(c *gin.Context) {
 	id := c.Query("id")
 	taskID, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "无效的任务ID",
-		})
+		response.Error(c, http.StatusBadRequest, 200, "无效的任务ID")
 		return
 	}
 	user_id, ok := middleware.GetUserId(c)
 	if !ok {
-		c.JSON(401, gin.H{
-			"error": "token过期或不存在",
-		})
+		response.Error(c, http.StatusUnauthorized, 200, "token过期或不存在")
 		return
 	}
 	task, err := h.service.GetTaskByID(c.Request.Context(), user_id, taskID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			// error 字段向客户端说明请求失败。
-			"error": "failed to get tasks",
-		})
+		response.Error(c, http.StatusInternalServerError, 200, "failed to get tasks")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"data": task,
-	})
+	response.Success(c, task)
 }
 func (h *TaskHandler) DeleteByList(c *gin.Context) {
 	var req struct {
 		IDs []int64 `json:"ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request",
-		})
+		response.Error(c, http.StatusBadRequest, 200, "invalid request")
 		return
 	}
 	if len(req.IDs) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "任务ID列表不能为空",
-		})
+		response.Error(c, http.StatusBadRequest, 200, "任务ID列表不能为空")
 		return
 	}
 	user_id, ok := middleware.GetUserId(c)
 	if !ok {
-		c.JSON(401, gin.H{
-			"error": "token过期或不存在",
-		})
+		response.Error(c, http.StatusUnauthorized, 200, "token过期或不存在")
 		return
 	}
 	err := h.service.DeleteByList(c.Request.Context(), req.IDs, user_id)
 	if err != nil {
-		c.JSON(500, gin.H{
-			"error": "删除失败" + err.Error(),
-		})
+		response.Error(c, http.StatusInternalServerError, 200, "删除失败"+err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"data": "删除成功",
-	})
+	response.Success(c, "删除成功")
 
 }
 
@@ -266,27 +213,19 @@ func (h *TaskHandler) Duplicate(c *gin.Context) {
 	newVar := c.Query("taskId")
 	taskId, newVar2 := strconv.Atoi(newVar)
 	if newVar2 != nil {
-		c.JSON(400, gin.H{
-			"errror": "请传入正确的taskId",
-		})
+		response.Error(c, http.StatusBadRequest, 200, "请传入正确的taskId")
 		return
 	}
 	user_id, ok := middleware.GetUserId(c)
 	if !ok {
-		c.JSON(401, gin.H{
-			"error": "token过期或不存在",
-		})
+		response.Error(c, http.StatusUnauthorized, 200, "token过期或不存在")
 		return
 	}
 	err := h.service.Duplicate(c.Request.Context(), user_id, int64(taskId))
 	if err != nil {
-		c.JSON(500, gin.H{
-			"error": err,
-		})
+		response.Error(c, http.StatusInternalServerError, 200, err.Error())
 		return
 	}
-	c.JSON(200, gin.H{
-		"data": "ok",
-	})
+	response.Success(c, "ok")
 
 }
