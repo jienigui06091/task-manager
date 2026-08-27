@@ -3,11 +3,18 @@ package main
 
 // import (...) 把本文件使用的其他包集中导入。
 import (
+	"context"
+	"errors"
+	"fmt"
 	"log"      // log 用于向终端输出日志或终止程序。
 	"net/http" // net/http 提供 HTTP 标准状态码等基础能力。
+	"os"
+	"strconv"
 
 	"github.com/gin-gonic/gin" // Gin 是用于构建 HTTP API 的第三方框架。
+	"github.com/joho/godotenv"
 
+	"task-manager/internal/cache"
 	"task-manager/internal/database" // database 包负责建立数据库连接池。
 	"task-manager/internal/handler"  // handler 包负责处理 HTTP 请求。
 	"task-manager/internal/middleware"
@@ -17,6 +24,10 @@ import (
 
 // main 是 Go 程序固定的入口函数，启动程序时会自动调用。
 func main() {
+	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Fatalf("load .env: %v", err)
+	}
+
 	// := 同时声明 db、err 两个变量，并接收连接池和可能出现的错误。
 	db, err := database.NewPostgresPool()
 	// if 在条件为 true 时执行花括号内的语句；err != nil 表示创建失败。
@@ -27,6 +38,28 @@ func main() {
 	// defer 登记延后调用：main 结束前关闭连接池，释放数据库资源。
 	defer db.Close()
 
+	redisDB, err := strconv.Atoi(os.Getenv("REDIS_DB"))
+	if err != nil {
+		log.Fatalf("REDIS_DB must be an integer: %v", err)
+	}
+
+	//连接redis
+	client := cache.NewRedis(
+		os.Getenv("REDIS_ADDR"),
+		os.Getenv("REDIS_USERNAME"),
+		os.Getenv("REDIS_PASSWORD"),
+		redisDB,
+	)
+	defer client.Close()
+
+	ctx := context.Background()
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("Redis connected")
+
 	// 创建仓储层对象，并让它持有数据库连接池。
 	taskRepository := repository.NewTaskRepository(db)
 	taskLogRepository := repository.NewTaskLogRepository()
@@ -34,7 +67,8 @@ func main() {
 	// 创建业务层对象，并把仓储层作为依赖传入。
 	taskService := service.NewTaskService(db,
 		taskRepository,
-		taskLogRepository)
+		taskLogRepository,
+		client)
 
 	// 创建 HTTP 处理器对象，并把业务层作为依赖传入。
 	taskHandler := handler.NewTaskHandler(taskService)

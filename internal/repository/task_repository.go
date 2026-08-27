@@ -198,37 +198,23 @@ func (r *TaskRepository) Duplicate(ctx context.Context, userId int64, taskId int
 	}
 	taskEn := model.Task{
 		UserId:    userId,
+		Title:     task.Title,
 		Completed: task.Completed,
-		CreatedAt: task.CreatedAt,
-		UpdatedAt: task.UpdatedAt,
 	}
 	errT := r.db.QueryRow(ctx, `
-		-- INSERT INTO 指定要向 tasks 表新增记录。
-		INSERT INTO tasks (user_id,title, completed,created_at,updated_at)
-		-- $1、$2 是参数占位符，避免直接拼接用户输入造成 SQL 注入。
-		VALUES ($1, $2, $3,$4,$5)
-		-- RETURNING 要求 PostgreSQL 返回刚插入记录的完整字段。
+		INSERT INTO tasks (user_id, title, completed)
+		VALUES ($1, $2, $3)
 		RETURNING id, user_id,title, completed, created_at, updated_at
 	`,
-		// 第一个 SQL 参数替换 $1，即任务标题。
 		taskEn.UserId,
 		taskEn.Title,
-		// 第二个 SQL 参数替换 $2，即任务完成状态。
 		taskEn.Completed,
-		taskEn.CreatedAt,
-		taskEn.UpdatedAt,
-	// Scan 读取 INSERT ... RETURNING 返回的唯一一行，填充 task 的字段。
 	).Scan(
-		// 将数据库返回的 id 写入 task.ID。
 		&task.ID,
 		&task.UserId,
-		// 将数据库返回的 title 写入 task.Title。
 		&task.Title,
-		// 将数据库返回的 completed 写入 task.Completed。
 		&task.Completed,
-		// 将数据库返回的 created_at 写入 task.CreatedAt。
 		&task.CreatedAt,
-		// 将数据库返回的 updated_at 写入 task.UpdatedAt。
 		&task.UpdatedAt,
 	)
 	if errT != nil {

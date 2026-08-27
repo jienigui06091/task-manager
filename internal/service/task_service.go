@@ -4,13 +4,17 @@ package service
 // import (...) 导入业务层需要的标准库和项目内部包。
 import (
 	"context" // context 用于把请求生命周期传递给仓储层。
-	"errors"  // errors 用于创建普通错误值。
+	"encoding/json"
+	"errors" // errors 用于创建普通错误值。
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"task-manager/internal/apperror"
 	"task-manager/internal/model"      // model 包定义 Task 数据结构。
 	"task-manager/internal/repository" // repository 包负责数据库操作。
+	"time"
 )
 
 var (
@@ -28,6 +32,7 @@ type TaskService struct {
 	db             *pgxpool.Pool
 	taskRepository *repository.TaskRepository
 	logRepository  *repository.TaskLogRepository
+	redisClient    *redis.Client
 }
 
 // NewTaskService 创建业务服务，并把仓储依赖保存到结构体中。
@@ -42,12 +47,14 @@ func NewTaskService(
 	db *pgxpool.Pool,
 	taskRepository *repository.TaskRepository,
 	logRepository *repository.TaskLogRepository,
+	redisClient *redis.Client,
 ) *TaskService {
 
 	return &TaskService{
 		db:             db,
 		taskRepository: taskRepository,
 		logRepository:  logRepository,
+		redisClient:    redisClient,
 	}
 }
 
@@ -142,6 +149,21 @@ func (s *TaskService) CreateTask(
 	return task, nil
 }
 func (s *TaskService) GetTaskByID(ctx context.Context, userId int64, taskId int64) (model.Task, error) {
+	cacheKey := taskCacheKey(userId, taskId)
+	if s.redisClient != nil {
+		cachedTask, err := s.redisClient.Get(ctx, cacheKey).Bytes()
+		switch {
+		case err == nil:
+			var task model.Task
+			if err := json.Unmarshal(cachedTask, &task); err == nil {
+				return task, nil
+			}
+			_ = s.redisClient.Del(ctx, cacheKey).Err()
+		case err != redis.Nil:
+			// Redis is an optimization. Read from PostgreSQL when it is unavailable.
+		}
+	}
+
 	task, err := s.taskRepository.GetByID(ctx, userId, taskId)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -149,6 +171,8 @@ func (s *TaskService) GetTaskByID(ctx context.Context, userId int64, taskId int6
 		}
 		return model.Task{}, err
 	}
+
+	s.cacheTask(ctx, cacheKey, task)
 	return task, nil
 }
 
@@ -175,6 +199,7 @@ func (s *TaskService) UpdateTask(
 		return model.Task{}, apperror.ErrInvalid
 	}
 
+	s.deleteTaskCache(ctx, userId, id)
 	return updatedTask, nil
 }
 
@@ -183,6 +208,10 @@ func (s *TaskService) DeleteByList(ctx context.Context, ids []int64, UserId int6
 	err := s.taskRepository.DeleteByList(ctx, ids, UserId)
 	if err != nil {
 		return err
+	}
+
+	for _, id := range ids {
+		s.deleteTaskCache(ctx, UserId, id)
 	}
 
 	return nil
@@ -195,4 +224,31 @@ func (s *TaskService) Duplicate(ctx context.Context, userId int64, taskId int64)
 		return err
 	}
 	return nil
+}
+
+const taskCacheTTL = 5 * time.Minute
+
+func taskCacheKey(userID, taskID int64) string {
+	return fmt.Sprintf("task:%d:%d", userID, taskID)
+}
+
+func (s *TaskService) cacheTask(ctx context.Context, cacheKey string, task model.Task) {
+	if s.redisClient == nil {
+		return
+	}
+
+	data, err := json.Marshal(task)
+	if err != nil {
+		return
+	}
+
+	_ = s.redisClient.Set(ctx, cacheKey, data, taskCacheTTL).Err()
+}
+
+func (s *TaskService) deleteTaskCache(ctx context.Context, userID, taskID int64) {
+	if s.redisClient == nil {
+		return
+	}
+
+	_ = s.redisClient.Del(ctx, taskCacheKey(userID, taskID)).Err()
 }
