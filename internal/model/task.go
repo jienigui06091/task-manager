@@ -1,9 +1,6 @@
 // package model 存放项目中使用的数据结构（也称模型）。
 package model
 
-// import 导入 time 包，用来表示日期和时间。
-import "time"
-
 // type Task struct 定义名为 Task 的结构体；结构体把多个相关字段组合成一个类型。
 type Task struct {
 	// ID 是任务的数据库主键；int64 是 64 位有符号整数。
@@ -14,8 +11,5 @@ type Task struct {
 	Title string `json:"title"`
 	// Completed 表示任务是否完成；bool 只能是 true 或 false。
 	Completed bool `json:"completed"`
-	// CreatedAt 是创建时间；time.Time 是 time 包提供的时间类型。
-	CreatedAt time.Time `json:"created_at"`
-	// UpdatedAt 是最后更新时间；JSON 字段名为 updated_at。
-	UpdatedAt time.Time `json:"updated_at"`
+	Base
 }

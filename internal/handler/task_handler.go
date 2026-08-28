@@ -65,12 +65,14 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 		return
 	}
 
+	pageDto:=model.PageDTO{}
+	pageDto.Page=iPage
+	pageDto.PageSize = iPage
+	pageDto.Total = total
 	// 查询成功时，以 HTTP 200 状态返回包含任务列表的 JSON 对象。
 	response.Success(c, model.TaskPage{
 		List:     tasks,
-		Page:     iPage,
-		PageSize: iPageSize,
-		Total:    total,
+		PageDTO: pageDto,
 	})
 }
 

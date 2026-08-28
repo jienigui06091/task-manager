@@ -1,8 +1,4 @@
 package model
-// import 导入 time 包，用来表示日期和时间。
-import (
-	"time"
-)
 
 // type Task struct 定义名为 Task 的结构体；结构体把多个相关字段组合成一个类型。
 type AdminUser struct {
@@ -11,8 +7,5 @@ type AdminUser struct {
 	// 反引号中的 json 标签规定 JSON 输出时的字段名为 title。
 	PasswordHash string `json:"password_hash"`
 	Username string `json:"username"`
-	// CreatedAt 是创建时间；time.Time 是 time 包提供的时间类型。
-	CreatedAt time.Time `json:"created_at"`
-	// UpdatedAt 是最后更新时间；JSON 字段名为 updated_at。
-	UpdatedAt time.Time `json:"updated_at"`
+	Base
 }
