@@ -79,6 +79,9 @@ func main() {
 
 	// gin.Default 创建路由引擎，同时启用默认日志与异常恢复中间件。
 	r := gin.Default()
+	r.Use(
+		middleware.ErrorHandler(),
+	)
 	//不需要JWT
 	authGroup := r.Group("/api/auth")
 	{

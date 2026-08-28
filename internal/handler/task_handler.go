@@ -3,13 +3,13 @@ package handler
 
 // import (...) 导入 HTTP 状态码、Gin 框架和业务层。
 import (
-	"errors"
-	"net/http" // net/http 提供 StatusOK、StatusBadRequest 等标准状态码常量。
+	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin" // Gin 提供路由上下文和 JSON 响应方法。
 
+	"task-manager/internal/apperror"
 	"task-manager/internal/middleware"
 	"task-manager/internal/model"
 	"task-manager/internal/response"
@@ -38,21 +38,21 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 	userId, ok := middleware.GetUserId(c)
 	if !ok {
 
-		response.Error(c, http.StatusUnauthorized, 200, "token过期或不存在")
+		_ = c.Error(apperror.New(40101, http.StatusUnauthorized, "token过期或不存在"))
 		return
 	}
 	if page == "" || pageSize == "" {
-		response.Error(c, http.StatusBadRequest, 200, "请检查分页参数准确性")
+		_ = c.Error(apperror.New(40001, http.StatusBadRequest, "请检查分页参数准确性"))
 		return
 	}
 	iPage, err1 := strconv.Atoi(page)
 	iPageSize, err2 := strconv.Atoi(pageSize)
 	if err1 != nil || err2 != nil {
-		response.Error(c, http.StatusBadRequest, 200, "请检查分页参数准确性")
+		_ = c.Error(apperror.New(40001, http.StatusBadRequest, "请检查分页参数准确性"))
 		return
 	}
 	if iPage < 1 || iPageSize < 1 || iPageSize > 100 {
-		response.Error(c, http.StatusBadRequest, 200, "请检查分页参数准确性")
+		_ = c.Error(apperror.New(40001, http.StatusBadRequest, "请检查分页参数准确性"))
 		return
 	}
 
@@ -60,8 +60,7 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 	tasks, total, err := h.service.GetAllTasks(c.Request.Context(), userId, iPage, iPageSize)
 	// 数据库查询或业务处理失败时，进入错误响应分支。
 	if err != nil {
-		// 以 HTTP 500 状态返回 JSON；gin.H 是 JSON 对象的简写类型。
-		response.Error(c, http.StatusInternalServerError, 200, "failed to get tasks")
+		_ = c.Error(err)
 		// return 结束处理函数，避免继续发送成功响应。
 		return
 	}
@@ -88,8 +87,8 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 
 	// ShouldBindJSON 解析请求体 JSON 并写入 req；&req 传入变量地址。
 	if err := c.ShouldBindJSON(&req); err != nil {
-		// JSON 格式不正确或不能映射到结构体时，以 HTTP 400 状态返回错误。
-		response.Error(c, http.StatusBadRequest, 200, "invalid request")
+		// JSON 格式不正确或不能映射到结构体时，由错误中间件输出响应。
+		_ = c.Error(apperror.New(40001, http.StatusBadRequest, "invalid request"))
 		// 结束函数，避免无效输入继续进入业务层。
 		return
 	}
@@ -97,13 +96,13 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	//去除参数中的空格
 	req.Title = strings.TrimSpace(req.Title)
 	if req.Title == "" {
-		response.Error(c, http.StatusBadRequest, 200, "invalid request")
+		_ = c.Error(apperror.New(40001, http.StatusBadRequest, "invalid request"))
 		return
 	}
 	// 调用业务层创建任务，并接收新任务和可能的业务错误。
 	user_id, ok := middleware.GetUserId(c)
 	if !ok {
-		response.Error(c, http.StatusUnauthorized, 200, "token过期或不存在")
+		_ = c.Error(apperror.New(40101, http.StatusUnauthorized, "token过期或不存在"))
 		return
 	}
 	task, err := h.service.CreateTask(
@@ -116,8 +115,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 
 	// 例如标题为空时业务层会返回错误。
 	if err != nil {
-		// 以 HTTP 400 状态返回错误文本；err.Error() 将 error 转为字符串。
-		response.Error(c, http.StatusBadRequest, 200, err.Error())
+		_ = c.Error(err)
 		// 发送错误响应后立即结束函数。
 		return
 	}
@@ -135,30 +133,25 @@ type UpdateTaskRequest struct {
 func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	var req UpdateTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, 200, "invalid request")
+		_ = c.Error(apperror.New(40001, http.StatusBadRequest, "invalid request"))
 		return
 	}
 	if req.ID <= 0 {
-		response.Error(c, http.StatusBadRequest, 200, "任务的id不能小于等于0")
+		_ = c.Error(apperror.New(40001, http.StatusBadRequest, "任务的id不能小于等于0"))
 		return
 	}
 	if req.Title == "" {
-		response.Error(c, http.StatusBadRequest, 200, "任务的标题不能为空")
+		_ = c.Error(apperror.New(40001, http.StatusBadRequest, "任务的标题不能为空"))
 		return
 	}
 	user_id, ok := middleware.GetUserId(c)
 	if !ok {
-		response.Error(c, http.StatusUnauthorized, 200, "token过期或不存在")
+		_ = c.Error(apperror.New(40101, http.StatusUnauthorized, "token过期或不存在"))
 		return
 	}
 	task, err := h.service.UpdateTask(c.Request.Context(), req.ID, user_id, req.Title, req.Completed)
 	if err != nil {
-		if errors.Is(err, service.ErrTaskNotFound) {
-			response.Error(c, http.StatusNotFound, 200, "任务不存在")
-			return
-		}
-
-		response.Error(c, http.StatusInternalServerError, 200, "任务更新失败")
+		_ = c.Error(err)
 		return
 	}
 	response.Success(c, task)
@@ -168,17 +161,17 @@ func (h *TaskHandler) GetTaskByID(c *gin.Context) {
 	id := c.Query("id")
 	taskID, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, 200, "无效的任务ID")
+		_ = c.Error(apperror.New(40001, http.StatusBadRequest, "无效的任务ID"))
 		return
 	}
 	user_id, ok := middleware.GetUserId(c)
 	if !ok {
-		response.Error(c, http.StatusUnauthorized, 200, "token过期或不存在")
+		_ = c.Error(apperror.New(40101, http.StatusUnauthorized, "token过期或不存在"))
 		return
 	}
 	task, err := h.service.GetTaskByID(c.Request.Context(), user_id, taskID)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, 200, "failed to get tasks")
+		_ = c.Error(err)
 		return
 	}
 	response.Success(c, task)
@@ -188,21 +181,21 @@ func (h *TaskHandler) DeleteByList(c *gin.Context) {
 		IDs []int64 `json:"ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, 200, "invalid request")
+		_ = c.Error(apperror.New(40001, http.StatusBadRequest, "invalid request"))
 		return
 	}
 	if len(req.IDs) == 0 {
-		response.Error(c, http.StatusBadRequest, 200, "任务ID列表不能为空")
+		_ = c.Error(apperror.New(40001, http.StatusBadRequest, "任务ID列表不能为空"))
 		return
 	}
 	user_id, ok := middleware.GetUserId(c)
 	if !ok {
-		response.Error(c, http.StatusUnauthorized, 200, "token过期或不存在")
+		_ = c.Error(apperror.New(40101, http.StatusUnauthorized, "token过期或不存在"))
 		return
 	}
 	err := h.service.DeleteByList(c.Request.Context(), req.IDs, user_id)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, 200, "删除失败"+err.Error())
+		_ = c.Error(err)
 		return
 	}
 	response.Success(c, "删除成功")
@@ -213,17 +206,17 @@ func (h *TaskHandler) Duplicate(c *gin.Context) {
 	newVar := c.Query("taskId")
 	taskId, newVar2 := strconv.Atoi(newVar)
 	if newVar2 != nil {
-		response.Error(c, http.StatusBadRequest, 200, "请传入正确的taskId")
+		_ = c.Error(apperror.New(40001, http.StatusBadRequest, "请传入正确的taskId"))
 		return
 	}
 	user_id, ok := middleware.GetUserId(c)
 	if !ok {
-		response.Error(c, http.StatusUnauthorized, 200, "token过期或不存在")
+		_ = c.Error(apperror.New(40101, http.StatusUnauthorized, "token过期或不存在"))
 		return
 	}
 	err := h.service.Duplicate(c.Request.Context(), user_id, int64(taskId))
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, 200, err.Error())
+		_ = c.Error(err)
 		return
 	}
 	response.Success(c, "ok")
