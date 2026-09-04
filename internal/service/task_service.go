@@ -1,20 +1,18 @@
-// package service 存放业务规则，并协调仓储层与 HTTP 处理器层。
 package service
 
-// import (...) 导入业务层需要的标准库和项目内部包。
 import (
-	"context" // context 用于把请求生命周期传递给仓储层。
+	"context"
 	"encoding/json"
-	"errors" // errors 用于创建普通错误值。
+	"errors"
 	"fmt"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
-	"task-manager/internal/apperror"
-	"task-manager/internal/model"      // model 包定义 Task 数据结构。
-	"task-manager/internal/repository" // repository 包负责数据库操作。
 	"time"
+
+	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
+
+	"task-manager/internal/apperror"
+	"task-manager/internal/cache"
+	"task-manager/internal/model"
 )
 
 var (
@@ -22,208 +20,100 @@ var (
 	ErrUpdateTaskFailed = errors.New("failed to update task")
 )
 
-// TaskService 是任务业务服务；它通过 repository 字段访问数据。
-//
-//	type TaskService struct {
-//		// repository 保存任务仓储的指针，使服务可调用它的方法。
-//		repository *repository.TaskRepository
-//	}
-type TaskService struct {
-	db             *pgxpool.Pool
-	taskRepository *repository.TaskRepository
-	logRepository  *repository.TaskLogRepository
-	redisClient    *redis.Client
-}
-
-// NewTaskService 创建业务服务，并把仓储依赖保存到结构体中。
-//
-//	func NewTaskService(repository *repository.TaskRepository) *TaskService {
-//		// 返回新结构体的地址；左侧 repository 是字段，右侧是函数参数。
-//		return &TaskService{
-//			repository: repository,
-//		}
-//	}
-func NewTaskService(
-	db *pgxpool.Pool,
-	taskRepository *repository.TaskRepository,
-	logRepository *repository.TaskLogRepository,
-	redisClient *redis.Client,
-) *TaskService {
-
-	return &TaskService{
-		db:             db,
-		taskRepository: taskRepository,
-		logRepository:  logRepository,
-		redisClient:    redisClient,
-	}
-}
-
-// GetAllTasks 是获取全部任务的业务方法；目前没有额外规则，直接委托给仓储层。
-func (s *TaskService) GetAllTasks(
-	// ctx 会继续传给数据库操作，使请求取消能及时生效。
-	ctx context.Context,
-	userId int64,
-	page int,
-	pageSize int,
-	// 返回任务切片和错误。
-) ([]model.Task, int64, error) {
-	// s.repository 访问接收者字段，再调用其 GetAll 方法。
-
-	return s.taskRepository.GetAll(ctx, userId, page, pageSize)
-}
-
-// CreateTask 根据标题创建任务，并在写入数据库前验证输入。
-// func (s *TaskService) CreateTask(
-// 	// ctx 会传给后续数据库操作。
-// 	ctx context.Context,
-// 	userId int64,
-// 	// title 是客户端传来的任务标题。
-// 	title string,
-// 	// 返回创建成功的任务或错误。
-// ) (model.Task, error) {
-
-// 	// == 比较两个值是否相等；空字符串不允许作为任务标题。
-// 	if title == "" {
-// 		// errors.New 创建错误；空结构体和错误一起返回以表示创建失败。
-// 		return model.Task{}, errors.New("title is required")
-// 	}
-
-// 	// 使用结构体字面量创建任务；未列出的字段自动使用对应类型的零值。
-// 	task := model.Task{
-// 		// 设置任务标题为函数参数 title。
-// 		UserId: userId,
-// 		Title:  title,
-// 		// 新任务默认尚未完成。
-// 		Completed: false,
-// 	}
-
-//		// 调用仓储层写入数据库，并直接返回其两个结果。
-//		return s.repository.Create(ctx, task)
-//	}
-func (s *TaskService) CreateTask(
+func GetAllTasks(
 	ctx context.Context,
 	userID int64,
-	title string,
-) (model.Task, error) {
+	page, pageSize int,
+) ([]model.Task, int64, error) {
+	return model.GetTasks(ctx, userID, page, pageSize)
+}
 
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return model.Task{}, err
-	}
-
-	defer tx.Rollback(ctx)
-
+func CreateTask(ctx context.Context, userID int64, title string) (model.Task, error) {
 	task := model.Task{
 		UserId:    userID,
 		Title:     title,
 		Completed: false,
 	}
 
-	// ① 创建 Task
-	task, err = s.taskRepository.Create(
-		ctx,
-		tx,
-		task,
-	)
-	if err != nil {
-		return model.Task{}, err
-	}
+	err := model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := model.CreateTask(ctx, tx, &task); err != nil {
+			return err
+		}
 
-	// ② 创建操作日志
-	err = s.logRepository.Create(
-		ctx,
-		tx,
-		task.ID,
-		userID,
-		"create",
-	)
+		return model.CreateTaskLog(ctx, tx, task.ID, userID, "create")
+	})
 	if err != nil {
-		return model.Task{}, err
-	}
-
-	// ③ 提交事务
-	if err := tx.Commit(ctx); err != nil {
 		return model.Task{}, err
 	}
 
 	return task, nil
 }
-func (s *TaskService) GetTaskByID(ctx context.Context, userId int64, taskId int64) (model.Task, error) {
-	cacheKey := taskCacheKey(userId, taskId)
-	if s.redisClient != nil {
-		cachedTask, err := s.redisClient.Get(ctx, cacheKey).Bytes()
+
+func GetTaskByID(ctx context.Context, userID, taskID int64) (model.Task, error) {
+	cacheKey := taskCacheKey(userID, taskID)
+	if cache.RedisClient != nil {
+		cachedTask, err := cache.RedisClient.Get(ctx, cacheKey).Bytes()
 		switch {
 		case err == nil:
 			var task model.Task
 			if err := json.Unmarshal(cachedTask, &task); err == nil {
 				return task, nil
 			}
-			_ = s.redisClient.Del(ctx, cacheKey).Err()
+			_ = cache.RedisClient.Del(ctx, cacheKey).Err()
 		case err != redis.Nil:
 			// Redis is an optimization. Read from PostgreSQL when it is unavailable.
 		}
 	}
 
-	task, err := s.taskRepository.GetByID(ctx, userId, taskId)
+	task, err := model.GetTaskByID(ctx, userID, taskID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return model.Task{}, apperror.ErrNotFound
 		}
 		return model.Task{}, err
 	}
 
-	s.cacheTask(ctx, cacheKey, task)
+	cacheTask(ctx, cacheKey, task)
 	return task, nil
 }
 
-func (s *TaskService) UpdateTask(
+func UpdateTask(
 	ctx context.Context,
-	id int64,
-	userId int64,
+	id, userID int64,
 	title string,
 	completed bool,
 ) (model.Task, error) {
-	task := model.Task{
+	updatedTask, err := model.UpdateTask(ctx, model.Task{
 		ID:        id,
-		UserId:    userId,
+		UserId:    userID,
 		Title:     title,
 		Completed: completed,
-	}
-
-	updatedTask, err := s.taskRepository.Update(ctx, task)
+	})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return model.Task{}, apperror.ErrNotFound
 		}
-
 		return model.Task{}, apperror.ErrInvalid
 	}
 
-	s.deleteTaskCache(ctx, userId, id)
+	deleteTaskCache(ctx, userID, id)
 	return updatedTask, nil
 }
 
-func (s *TaskService) DeleteByList(ctx context.Context, ids []int64, UserId int64) error {
-
-	err := s.taskRepository.DeleteByList(ctx, ids, UserId)
-	if err != nil {
+func DeleteTasks(ctx context.Context, ids []int64, userID int64) error {
+	if err := model.DeleteTasks(ctx, ids, userID); err != nil {
 		return err
 	}
 
 	for _, id := range ids {
-		s.deleteTaskCache(ctx, UserId, id)
+		deleteTaskCache(ctx, userID, id)
 	}
 
 	return nil
-
 }
 
-func (s *TaskService) Duplicate(ctx context.Context, userId int64, taskId int64) error {
-	err := s.taskRepository.Duplicate(ctx, userId, taskId)
-	if err != nil {
-		return err
-	}
-	return nil
+func DuplicateTask(ctx context.Context, userID, taskID int64) error {
+	return model.DuplicateTask(ctx, userID, taskID)
 }
 
 const taskCacheTTL = 5 * time.Minute
@@ -232,8 +122,8 @@ func taskCacheKey(userID, taskID int64) string {
 	return fmt.Sprintf("task:%d:%d", userID, taskID)
 }
 
-func (s *TaskService) cacheTask(ctx context.Context, cacheKey string, task model.Task) {
-	if s.redisClient == nil {
+func cacheTask(ctx context.Context, cacheKey string, task model.Task) {
+	if cache.RedisClient == nil {
 		return
 	}
 
@@ -242,13 +132,13 @@ func (s *TaskService) cacheTask(ctx context.Context, cacheKey string, task model
 		return
 	}
 
-	_ = s.redisClient.Set(ctx, cacheKey, data, taskCacheTTL).Err()
+	_ = cache.RedisClient.Set(ctx, cacheKey, data, taskCacheTTL).Err()
 }
 
-func (s *TaskService) deleteTaskCache(ctx context.Context, userID, taskID int64) {
-	if s.redisClient == nil {
+func deleteTaskCache(ctx context.Context, userID, taskID int64) {
+	if cache.RedisClient == nil {
 		return
 	}
 
-	_ = s.redisClient.Del(ctx, taskCacheKey(userID, taskID)).Err()
+	_ = cache.RedisClient.Del(ctx, taskCacheKey(userID, taskID)).Err()
 }
